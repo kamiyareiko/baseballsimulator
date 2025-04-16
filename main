@@ -1,1 +1,1108 @@
+using System;
+using System.Collections.Generic;
 
+namespace BaseballSimulation
+{
+    /// <summary>
+    /// Represents a console-based baseball game simulation
+    /// </summary>
+    class BaseballGame
+    {
+        private Random random = new Random();
+        
+        // Game state variables
+        private int[] bases = new int[4]; // 0: Home, 1: First, 2: Second, 3: Third (1 means runner present, 0 means no runner)
+        private int outs;    // Number of outs in current half-inning
+        private int inning;  // Current inning (1-9, or more for extra innings)
+        private int teamAScore; // Team A score
+        private int teamBScore; // Team B score
+        private bool isTeamAOffense; // Current offense (true: Team A, false: Team B)
+        private bool isTeamAComputer; // Whether Team A is controlled by computer
+        private bool isTeamBComputer; // Whether Team B is controlled by computer
+        
+        // Game log for recording key events
+        private List<string> gameLog = new List<string>();
+        
+        // Achievement and statistic tracking
+        private AchievementManager achievementManager;
+        private int perfectGuessCount;
+        private int strikeoutCount;
+        private int runsScoredThisInning;
+        private int largestLead;
+        private int biggestComeback;
+        private bool wasTrailingByThreeOrMore;
+        private bool hasAllowedRun;
+        
+        /// <summary>
+        /// Initializes and starts the baseball game
+        /// </summary>
+        public void StartGame()
+        {
+            Console.WriteLine("====================================");
+            Console.WriteLine("     9-INNING BASEBALL GAME        ");
+            Console.WriteLine("====================================");
+            Console.WriteLine("\nWelcome to the Baseball Simulation!");
+            Console.WriteLine("In this game, you'll select pitch/bat zones (1-9)");
+            Console.WriteLine("If the batter guesses correctly, they'll hit the ball!");
+            Console.WriteLine("Otherwise, after 3 wrong guesses, they're out.");
+            Console.WriteLine("\nYou can earn achievements as you play!");
+            Console.WriteLine("Press A at any time to view your achievements.");
+            Console.WriteLine("Press L at any time to view the game log.");
+            Console.WriteLine("\nPress Enter to continue...");
+            Console.ReadLine();
+            
+            SetupTeams();
+
+            // Initialize game state
+            bases = new int[4];
+            outs = 0;
+            inning = 1;
+            teamAScore = 0;
+            teamBScore = 0;
+            isTeamAOffense = true;
+            gameLog = new List<string>(); // Initialize game log
+            
+            // Initialize achievement tracking
+            achievementManager = new AchievementManager();
+            perfectGuessCount = 0;
+            strikeoutCount = 0;
+            runsScoredThisInning = 0;
+            largestLead = 0;
+            biggestComeback = 0;
+            wasTrailingByThreeOrMore = false;
+            hasAllowedRun = false;
+            
+            // Log game start
+            LogGameEvent("GAME STARTED - Play Ball!");
+
+            Console.Clear();
+            
+            // Main game loop - play until 9 innings (or more if tied)
+            while (inning <= 9 || (inning > 9 && teamAScore == teamBScore))
+            {
+                PlayInning();
+                inning++;
+            }
+
+            // Game over - display final results
+            DisplayGameState(); // Final state
+            
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("\nGame Over!");
+            Console.ResetColor();
+            
+            Console.WriteLine($"Final Score: Team A: {teamAScore}, Team B: {teamBScore}");
+            
+            // Log game over
+            LogGameEvent($"GAME OVER! Final Score: Team A {teamAScore} - Team B {teamBScore}");
+            
+            // Check final game achievements
+            bool teamAWin = teamAScore > teamBScore;
+            if (teamAWin)
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("Team A Wins!");
+                
+                // Game winner achievement
+                if (achievementManager.EarnAchievement("gameWinner"))
+                    achievementManager.ShowAchievementNotification("gameWinner");
+                
+                // Check for comeback win
+                if (wasTrailingByThreeOrMore)
+                {
+                    if (achievementManager.EarnAchievement("comeback"))
+                        achievementManager.ShowAchievementNotification("comeback");
+                }
+                
+                // Check for shutout
+                if (!hasAllowedRun)
+                {
+                    if (achievementManager.EarnAchievement("shutout"))
+                        achievementManager.ShowAchievementNotification("shutout");
+                }
+            }
+            else
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("Team B Wins!");
+            }
+            Console.ResetColor();
+            
+            // Check if played extra innings
+            if (inning > 9)
+            {
+                if (achievementManager.EarnAchievement("extraInnings"))
+                    achievementManager.ShowAchievementNotification("extraInnings");
+            }
+                
+            Console.WriteLine("\nOptions:");
+            Console.WriteLine("1. View achievements");
+            Console.WriteLine("2. View complete game log");
+            Console.WriteLine("3. Exit game");
+            Console.Write("Enter your choice (1-3): ");
+            
+            bool validChoice = false;
+            while (!validChoice)
+            {
+                string? input = Console.ReadLine();
+                input = input?.Trim() ?? "";
+                
+                switch (input)
+                {
+                    case "1":
+                        // Display final achievements
+                        achievementManager.DisplayAllAchievements();
+                        validChoice = true;
+                        break;
+                    case "2":
+                        // Display complete game log
+                        DisplayGameLog();
+                        validChoice = true;
+                        break;
+                    case "3":
+                        // Exit directly
+                        validChoice = true;
+                        break;
+                    default:
+                        Console.Write("Invalid choice. Please enter 1, 2, or 3: ");
+                        break;
+                }
+            }
+            
+            Console.WriteLine("\nThank you for playing! Press Enter to exit...");
+            Console.ReadLine();
+        }
+
+        /// <summary>
+        /// Sets up team control modes (human or computer)
+        /// </summary>
+        private void SetupTeams()
+        {
+            Console.WriteLine("\nWho controls Team A?");
+            Console.WriteLine("1. Human");
+            Console.WriteLine("2. Computer");
+            Console.Write("Enter your choice (1 or 2): ");
+            
+            while (true)
+            {
+                string? input = Console.ReadLine();
+                input = input?.Trim() ?? "";
+                if (input == "1")
+                {
+                    isTeamAComputer = false;
+                    break;
+                }
+                else if (input == "2")
+                {
+                    isTeamAComputer = true;
+                    break;
+                }
+                Console.Write("Invalid input. Please enter 1 or 2: ");
+            }
+
+            Console.WriteLine("\nWho controls Team B?");
+            Console.WriteLine("1. Human");
+            Console.WriteLine("2. Computer");
+            Console.Write("Enter your choice (1 or 2): ");
+            
+            while (true)
+            {
+                string? input = Console.ReadLine();
+                input = input?.Trim() ?? "";
+                if (input == "1")
+                {
+                    isTeamBComputer = false;
+                    break;
+                }
+                else if (input == "2")
+                {
+                    isTeamBComputer = true;
+                    break;
+                }
+                Console.Write("Invalid input. Please enter 1 or 2: ");
+            }
+        }
+
+        /// <summary>
+        /// Plays a complete inning (top and bottom)
+        /// </summary>
+        private void PlayInning()
+        {
+            // Top of inning - Team A batting
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine($"\nInning {inning} Top, Team A at bat");
+            Console.ResetColor();
+            isTeamAOffense = true;
+            
+            // Log inning start
+            LogGameEvent($"START INNING {inning}");
+            
+            PlayHalfInning();
+
+            // Bottom of inning - Team B batting
+            // In the 9th inning or later, if Team B is already ahead, they don't need to bat
+            if (inning < 9 || teamBScore <= teamAScore)
+            {
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine($"\nInning {inning} Bottom, Team B at bat");
+                Console.ResetColor();
+                isTeamAOffense = false;
+                PlayHalfInning();
+            }
+        }
+
+        /// <summary>
+        /// Plays a half-inning (one team batting)
+        /// </summary>
+        private void PlayHalfInning()
+        {
+            outs = 0;
+            Array.Clear(bases, 0, bases.Length); // Reset bases
+            runsScoredThisInning = 0; // Reset runs scored this inning counter
+            
+            // Track previous scores for perfect inning achievement
+            int previousTeamBScore = teamBScore;
+            
+            DisplayGameState();
+
+            // Continue until 3 outs are recorded
+            while (outs < 3)
+            {
+                PlayAtBat();
+                DisplayGameState();
+                // Minimal pause between at-bats for better readability
+                System.Threading.Thread.Sleep(300);
+            }
+            
+            // Check for perfect inning achievement (Team A pitching)
+            if (!isTeamAOffense && teamBScore == previousTeamBScore)
+            {
+                if (achievementManager.EarnAchievement("perfectInning"))
+                    achievementManager.ShowAchievementNotification("perfectInning");
+            }
+            
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"Half-inning over. Score: Team A: {teamAScore}, Team B: {teamBScore}");
+            Console.ResetColor();
+            
+            // Log half inning end
+            string halfInning = isTeamAOffense ? "Top" : "Bottom";
+            LogGameEvent($"END {halfInning} of Inning {inning}. Score: Team A {teamAScore} - Team B {teamBScore}");
+            
+            // Shorter pause between half-innings
+            System.Threading.Thread.Sleep(150);
+        }
+
+        /// <summary>
+        /// Handles a single at-bat sequence
+        /// </summary>
+        private void PlayAtBat()
+        {
+            // Determine if pitcher and batter are computer or human controlled
+            bool isPitcherComputer = isTeamAOffense ? isTeamBComputer : isTeamAComputer;
+            bool isBatterComputer = isTeamAOffense ? isTeamAComputer : isTeamBComputer;
+
+            string teamAtBat = isTeamAOffense ? "A" : "B";
+            string pitcherLabel = isPitcherComputer ? "Pitcher (Computer)" : "Pitcher (Player)";
+            string batterLabel = isBatterComputer ? "Batter (Computer)" : "Batter (Player)";
+
+            int guessesLeft = 3;
+            bool hit = false;
+
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine($"\nTeam {teamAtBat} at bat");
+            Console.ResetColor();
+            
+            while (guessesLeft > 0 && !hit)
+            {
+                // Pitcher selects zone
+                int pitchZone = isPitcherComputer ? random.Next(1, 10) : GetHumanPitch();
+                Console.ForegroundColor = ConsoleColor.Blue;
+                Console.WriteLine($"{pitcherLabel} has selected a pitch location...");
+                Console.ResetColor();
+                
+                // Minimal delay if computer is batting
+                if (isBatterComputer)
+                    System.Threading.Thread.Sleep(200);
+
+                // Batter guesses zone
+                int batterGuess = isBatterComputer ? random.Next(1, 10) : GetBatterGuess();
+                Console.ForegroundColor = ConsoleColor.Blue;
+                Console.WriteLine($"{batterLabel} guesses: {batterGuess}");
+                Console.ResetColor();
+                guessesLeft--;
+
+                // Compare guess to actual pitch zone
+                if (batterGuess == pitchZone)
+                {
+                    Console.ForegroundColor = ConsoleColor.Green;
+                    Console.WriteLine("");
+                    Console.WriteLine(">>> CORRECT GUESS! THE BALL IS HIT! <<<");
+                    Console.WriteLine("");
+                    Console.ResetColor();
+                    
+                    // Add pause so player can read message (1.5 seconds)
+                    System.Threading.Thread.Sleep(1500);
+                    
+                    hit = true;
+                    
+                    // Track achievement for perfect guess
+                    perfectGuessCount++;
+                    if (perfectGuessCount == 3)
+                    {
+                        if (achievementManager.EarnAchievement("perfectGuess"))
+                        {
+                            achievementManager.ShowAchievementNotification("perfectGuess");
+                            // Add pause after achievement (2 seconds)
+                            System.Threading.Thread.Sleep(2000);
+                        }
+                    }
+                    
+                    CalculateHitResult();
+                    
+                    // Add pause so player can read the hit result (2 seconds)
+                    System.Threading.Thread.Sleep(2000);
+                }
+                else
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("");
+                    Console.WriteLine($">>> WRONG GUESS! STRIKE! {guessesLeft} GUESSES REMAINING <<<");
+                    Console.WriteLine("");
+                    Console.ResetColor();
+                    
+                    // Add pause so player can read the strike message (1.5 seconds)
+                    System.Threading.Thread.Sleep(1500);
+                    if (guessesLeft == 0)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Yellow;
+                        Console.WriteLine("");
+                        Console.WriteLine("!!! THREE STRIKES, BATTER IS OUT !!!");
+                        Console.WriteLine("");
+                        Console.ResetColor();
+                        
+                        // Add pause so player can read the out message (2 seconds)
+                        System.Threading.Thread.Sleep(2000);
+                        
+                        outs++;
+                        
+                        // Log the strikeout
+                        string teamName = isTeamAOffense ? "Team A" : "Team B";
+                        LogGameEvent($"{teamName} batter STRUCK OUT!");
+                        
+                        // Track strikeouts for pitcher achievements
+                        if (!isTeamAOffense)  // Team B batting, Team A pitching
+                        {
+                            strikeoutCount++;
+                            if (strikeoutCount == 3)
+                            {
+                                if (achievementManager.EarnAchievement("threeStrikeouts"))
+                                    achievementManager.ShowAchievementNotification("threeStrikeouts");
+                            }
+                        }
+                    }
+                }
+                
+                // Minimal delay between pitches
+                System.Threading.Thread.Sleep(200);
+            }
+        }
+
+        /// <summary>
+        /// Gets pitch zone selection from human player
+        /// </summary>
+        /// <returns>Selected pitch zone (1-9)</returns>
+        private int GetHumanPitch()
+        {
+            // Clear the screen completely and redraw everything
+            Console.Clear();
+            DisplayGameState();
+            DisplayPitchingGrid();
+            
+            // Function to display the input prompt with consistent styling
+            void ShowPitcherPrompt()
+            {
+                // Add fewer blank lines - just enough to separate from the strike zone
+                Console.WriteLine("\n\n");
+                
+                // Add highly visible input area - AVOID using special Unicode characters
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("!!! INPUT REQUIRED - MAKE YOUR SELECTION !!!");
+                Console.WriteLine("****************************************");
+                
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("Pitcher: Select pitch location (1-9), 'A' for achievements, or 'L' for game log:");
+                
+                Console.ForegroundColor = ConsoleColor.Magenta;
+                Console.WriteLine(">>> TYPE YOUR SELECTION BELOW <<<");
+                
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("INPUT HERE> ");
+                Console.ForegroundColor = ConsoleColor.White;
+            }
+            
+            ShowPitcherPrompt();
+            
+            while (true)
+            {
+                string? input = Console.ReadLine();
+                
+                if (input != null)
+                {
+                    // Check for achievement view request
+                    if (input.Trim().ToUpper() == "A")
+                    {
+                        achievementManager.DisplayAllAchievements();
+                        DisplayGameState(); // Redisplay game state after viewing achievements
+                        ShowPitcherPrompt();
+                        continue;
+                    }
+                    
+                    // Check for game log view request
+                    if (input.Trim().ToUpper() == "L")
+                    {
+                        DisplayGameLog();
+                        DisplayGameState(); // Redisplay game state after viewing game log
+                        ShowPitcherPrompt();
+                        continue;
+                    }
+                    
+                    // Check for valid pitch location
+                    if (int.TryParse(input, out int pitch) && pitch >= 1 && pitch <= 9)
+                        return pitch;
+                }
+                
+                // Handle invalid input
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("\nPlease enter a number between 1 and 9, 'A' for achievements, or 'L' for game log!");
+                ShowPitcherPrompt();
+            }
+        }
+
+        /// <summary>
+        /// Gets batter's zone guess from human player
+        /// </summary>
+        /// <returns>Batter's zone guess (1-9)</returns>
+        private int GetBatterGuess()
+        {
+            // Clear the screen completely and redraw everything
+            Console.Clear();
+            DisplayGameState();
+            DisplayPitchingGrid();
+            
+            // Function to display the input prompt with consistent styling
+            void ShowBatterPrompt()
+            {
+                // Add fewer blank lines - just enough to separate from the strike zone
+                Console.WriteLine("\n\n");
+                
+                // Add highly visible input area - AVOID using special Unicode characters
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("!!! INPUT REQUIRED - MAKE YOUR SELECTION !!!");
+                Console.WriteLine("****************************************");
+                
+                Console.ForegroundColor = ConsoleColor.Cyan;
+                Console.WriteLine("Batter: Guess pitch location (1-9), 'A' for achievements, or 'L' for game log:");
+                
+                Console.ForegroundColor = ConsoleColor.Magenta;
+                Console.WriteLine(">>> TYPE YOUR SELECTION BELOW <<<");
+                
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.Write("INPUT HERE> ");
+                Console.ForegroundColor = ConsoleColor.White;
+            }
+            
+            ShowBatterPrompt();
+            
+            while (true)
+            {
+                string? input = Console.ReadLine();
+                
+                if (input != null)
+                {
+                    // Check for achievement view request
+                    if (input.Trim().ToUpper() == "A")
+                    {
+                        achievementManager.DisplayAllAchievements();
+                        DisplayGameState(); // Redisplay game state after viewing achievements
+                        ShowBatterPrompt();
+                        continue;
+                    }
+                    
+                    // Check for game log view request
+                    if (input.Trim().ToUpper() == "L")
+                    {
+                        DisplayGameLog();
+                        DisplayGameState(); // Redisplay game state after viewing game log
+                        ShowBatterPrompt();
+                        continue;
+                    }
+                    
+                    // Check for valid pitch location
+                    if (int.TryParse(input, out int guess) && guess >= 1 && guess <= 9)
+                        return guess;
+                }
+                
+                // Handle invalid input
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("\nPlease enter a number between 1 and 9, 'A' for achievements, or 'L' for game log!");
+                ShowBatterPrompt();
+            }
+        }
+
+        /// <summary>
+        /// Displays the strike zone grid for reference
+        /// </summary>
+        private void DisplayPitchingGrid()
+        {
+            Console.ForegroundColor = ConsoleColor.Gray;
+            Console.WriteLine("Strike Zone Reference:");
+            Console.WriteLine("1 | 2 | 3");
+            Console.WriteLine("---------");
+            Console.WriteLine("4 | 5 | 6");
+            Console.WriteLine("---------");
+            Console.WriteLine("7 | 8 | 9");
+            Console.ResetColor();
+        }
+
+        /// <summary>
+        /// Calculates and applies the result of a hit
+        /// </summary>
+        private void CalculateHitResult()
+        {
+            int roll = random.Next(1, 101);
+            string teamName = isTeamAOffense ? "Team A" : "Team B";
+            
+            if (roll <= 10) // 10% Home run
+            {
+                Console.ForegroundColor = ConsoleColor.Magenta;
+                Console.WriteLine("");
+                Console.WriteLine("***************************************");
+                Console.WriteLine("*     HOME RUN! BALL OUT OF PARK!     *");
+                Console.WriteLine("***************************************");
+                Console.WriteLine("");
+                
+                // Log the home run
+                LogGameEvent($"{teamName} hits a HOME RUN!");
+                
+                // Add pause so player can read the home run message (2 seconds)
+                System.Threading.Thread.Sleep(2000);
+                
+                // Home run achievement
+                if (achievementManager.EarnAchievement("homeRunHitter"))
+                    achievementManager.ShowAchievementNotification("homeRunHitter");
+                
+                // Check for grand slam (bases loaded)
+                if (bases[1] == 1 && bases[2] == 1 && bases[3] == 1)
+                {
+                    LogGameEvent($"GRAND SLAM by {teamName}! Bases were loaded.");
+                    if (achievementManager.EarnAchievement("grandSlam"))
+                        achievementManager.ShowAchievementNotification("grandSlam");
+                }
+                
+                UpdateBases(4);
+            }
+            else if (roll <= 42) // 32% Single
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("");
+                Console.WriteLine(">>> SINGLE! Batter reaches first base! <<<");
+                Console.WriteLine("");
+                
+                // Log the single
+                LogGameEvent($"{teamName} hits a SINGLE.");
+                
+                // Add pause so player can read the single message (2 seconds)
+                System.Threading.Thread.Sleep(2000);
+                
+                // Single achievement
+                if (achievementManager.EarnAchievement("singleHitter"))
+                    achievementManager.ShowAchievementNotification("singleHitter");
+                
+                UpdateBases(1);
+            }
+            else if (roll <= 60) // 18% Double
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("");
+                Console.WriteLine(">>> DOUBLE! Batter reaches second base! <<<");
+                Console.WriteLine("");
+                
+                // Log the double
+                LogGameEvent($"{teamName} hits a DOUBLE.");
+                
+                // Add pause so player can read the double message (2 seconds)
+                System.Threading.Thread.Sleep(2000);
+                
+                // Double achievement
+                if (achievementManager.EarnAchievement("doubleHitter"))
+                    achievementManager.ShowAchievementNotification("doubleHitter");
+                
+                UpdateBases(2);
+            }
+            else if (roll <= 65) // 5% Triple
+            {
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("");
+                Console.WriteLine(">>> TRIPLE! Batter reaches third base! <<<");
+                Console.WriteLine("");
+                
+                // Log the triple
+                LogGameEvent($"{teamName} hits a TRIPLE.");
+                
+                // Add pause so player can read the triple message (2 seconds)
+                System.Threading.Thread.Sleep(2000);
+                
+                // Triple achievement
+                if (achievementManager.EarnAchievement("tripleHitter"))
+                    achievementManager.ShowAchievementNotification("tripleHitter");
+                
+                UpdateBases(3);
+            }
+            else // 35% Out
+            {
+                string[] outTypes = { 
+                    "Fly out! Caught by the outfielder.", 
+                    "Ground out! Fielded by the infielder.", 
+                    "Line drive! Caught by the shortstop.", 
+                    "Pop fly! Caught by the catcher."
+                };
+                
+                string outMessage = outTypes[random.Next(outTypes.Length)];
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("");
+                Console.WriteLine($"!!! OUT: {outMessage} !!!");
+                Console.WriteLine("");
+                
+                // Log the out
+                LogGameEvent($"{teamName} batter: {outMessage}");
+                
+                // Add pause so player can read the out message (2 seconds)
+                System.Threading.Thread.Sleep(2000);
+                
+                outs++;
+            }
+            
+            Console.ResetColor();
+        }
+
+        /// <summary>
+        /// Updates base states and scores when runners advance
+        /// </summary>
+        /// <param name="basesAdvanced">Number of bases to advance runners</param>
+        private void UpdateBases(int basesAdvanced)
+        {
+            int runsScored = 0;
+
+            // Process existing runners, starting from third base
+            for (int i = 3; i >= 1; i--)
+            {
+                if (bases[i] == 1)
+                {
+                    int newBase = i + basesAdvanced;
+                    if (newBase >= 4)
+                    {
+                        // Runner scores
+                        runsScored++;
+                        bases[i] = 0;
+                    }
+                    else
+                    {
+                        // Runner advances
+                        bases[newBase] = 1;
+                        bases[i] = 0;
+                    }
+                }
+            }
+
+            // Show runner animation and place batter on appropriate base
+            if (basesAdvanced < 4)
+            {
+                // Display base runner animation
+                DisplayRunnerAnimation(basesAdvanced);
+                
+                // Place batter on the appropriate base
+                bases[basesAdvanced] = 1;
+            }
+            else
+            {
+                // Home run - clear all bases and score all runners plus batter
+                DisplayHomeRunAnimation();
+                runsScored++;
+                for (int i = 1; i <= 3; i++)
+                {
+                    if (bases[i] == 1)
+                    {
+                        runsScored++;
+                        bases[i] = 0;
+                    }
+                }
+            }
+
+            // Update appropriate team's score
+            if (isTeamAOffense)
+            {
+                teamAScore += runsScored;
+                
+                // Track lead size for achievements
+                int currentLead = teamAScore - teamBScore;
+                if (currentLead > largestLead)
+                {
+                    largestLead = currentLead;
+                    
+                    // Check for commanding lead achievement
+                    if (largestLead >= 5 && !achievementManager.IsAchievementEarned("fiveRunLead"))
+                    {
+                        if (achievementManager.EarnAchievement("fiveRunLead"))
+                            achievementManager.ShowAchievementNotification("fiveRunLead");
+                    }
+                }
+                
+                // Check for comeback achievement tracking
+                if (teamBScore - teamAScore >= 3)
+                    wasTrailingByThreeOrMore = true;
+            }
+            else
+            {
+                teamBScore += runsScored;
+                hasAllowedRun = true;  // Used for shutout achievement tracking
+            }
+
+            // Track runs scored this inning
+            runsScoredThisInning += runsScored;
+            if (runsScoredThisInning >= 3)
+            {
+                if (achievementManager.EarnAchievement("threeRunInning"))
+                    achievementManager.ShowAchievementNotification("threeRunInning");
+            }
+            
+            // Check for first run achievement
+            if (runsScored > 0 && !achievementManager.IsAchievementEarned("firstRun"))
+            {
+                if (achievementManager.EarnAchievement("firstRun"))
+                    achievementManager.ShowAchievementNotification("firstRun");
+            }
+            
+            // Check for ten runs achievement
+            if ((isTeamAOffense && teamAScore >= 10) || (!isTeamAOffense && teamBScore >= 10))
+            {
+                if (achievementManager.EarnAchievement("tenRuns"))
+                    achievementManager.ShowAchievementNotification("tenRuns");
+            }
+
+            if (runsScored > 0)
+            {
+                string runWord = runsScored == 1 ? "run" : "runs";
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine("");
+                Console.WriteLine($">>> {runsScored} {runWord.ToUpper()} SCORED! <<<");
+                Console.WriteLine("");
+                Console.ResetColor();
+                
+                // Log runs scored
+                string teamName = isTeamAOffense ? "Team A" : "Team B";
+                LogGameEvent($"{teamName} scores {runsScored} {runWord}! Score: Team A {teamAScore} - Team B {teamBScore}");
+                
+                // Add pause so player can read the runs scored message (2 seconds)
+                System.Threading.Thread.Sleep(2000);
+            }
+        }
+
+        /// <summary>
+        /// Displays animation of a runner advancing to a base
+        /// </summary>
+        /// <param name="baseNumber">The base number the runner is advancing to (1-3)</param>
+        private void DisplayRunnerAnimation(int baseNumber)
+        {
+            string baseName = baseNumber == 1 ? "first" : (baseNumber == 2 ? "second" : "third");
+            
+            // Save current console state
+            int originalCursorTop = Console.CursorTop;
+            
+            // Store the original base configuration to restore later
+            int[] originalBases = new int[4];
+            Array.Copy(bases, originalBases, 4);
+            
+            // Animation frames for runner advancement
+            Console.ForegroundColor = ConsoleColor.Yellow;
+            Console.WriteLine($"\nRunner advancing to {baseName} base...");
+            
+            // Show home plate to first base animation (if going to first or beyond)
+            if (baseNumber >= 1)
+            {
+                Console.WriteLine("Runner leaving home plate!");
+                int[] animationBases = new int[4];
+                animationBases[0] = 1; // Runner at home
+                DisplayBaseDiagram(animationBases, true); // Use animation flag
+                System.Threading.Thread.Sleep(150);
+                
+                Console.WriteLine("Runner running to first base...");
+                animationBases[0] = 0;
+                animationBases[1] = 1; // Runner at first
+                DisplayBaseDiagram(animationBases, true); // Use animation flag
+                System.Threading.Thread.Sleep(150);
+            }
+            
+            // Show first to second base animation (if going to second or beyond)
+            if (baseNumber >= 2)
+            {
+                Console.WriteLine("Runner continuing to second base...");
+                int[] animationBases = new int[4];
+                animationBases[1] = 0;
+                animationBases[2] = 1; // Runner at second
+                DisplayBaseDiagram(animationBases, true); // Use animation flag
+                System.Threading.Thread.Sleep(150);
+            }
+            
+            // Show second to third base animation (if going to third)
+            if (baseNumber >= 3)
+            {
+                Console.WriteLine("Runner rounding second and heading to third base...");
+                int[] animationBases = new int[4];
+                animationBases[2] = 0;
+                animationBases[3] = 1; // Runner at third
+                DisplayBaseDiagram(animationBases, true); // Use animation flag
+                System.Threading.Thread.Sleep(150);
+            }
+            
+            // Restore the original base values (they'll be properly updated by the caller)
+            Array.Copy(originalBases, bases, 4);
+            
+            Console.ResetColor();
+            System.Threading.Thread.Sleep(200);
+        }
+        
+        /// <summary>
+        /// Display an animation for a home run
+        /// </summary>
+        private void DisplayHomeRunAnimation()
+        {
+            Console.ForegroundColor = ConsoleColor.Magenta;
+            
+            Console.WriteLine("\nThe ball is flying...");
+            System.Threading.Thread.Sleep(150);
+            
+            Console.WriteLine("Going... Going...");
+            System.Threading.Thread.Sleep(150);
+            
+            Console.WriteLine("GONE!!!");
+            
+            // Show home run celebration ASCII art
+            Console.WriteLine(@"
+     \o/
+      |     HOME
+     / \    RUN!
+            ");
+            
+            System.Threading.Thread.Sleep(300);
+            
+            // Show the runner rounding the bases
+            int[] animationBases = new int[4];
+            
+            // First base
+            Console.WriteLine("Runner rounds first base!");
+            animationBases[1] = 1;
+            DisplayBaseDiagram(animationBases, true); // Use animation flag
+            System.Threading.Thread.Sleep(300);
+            
+            // Second base
+            Console.WriteLine("Runner touches second base!");
+            animationBases[1] = 0;
+            animationBases[2] = 1;
+            DisplayBaseDiagram(animationBases, true); // Use animation flag
+            System.Threading.Thread.Sleep(300);
+            
+            // Third base
+            Console.WriteLine("Runner reaches third base!");
+            animationBases[2] = 0;
+            animationBases[3] = 1;
+            DisplayBaseDiagram(animationBases, true); // Use animation flag
+            System.Threading.Thread.Sleep(300);
+            
+            // Home plate
+            Console.WriteLine("Runner crosses home plate!");
+            animationBases[3] = 0;
+            animationBases[0] = 1;
+            DisplayBaseDiagram(animationBases, true); // Use animation flag
+            System.Threading.Thread.Sleep(300);
+            
+            // Clear runner from home
+            animationBases[0] = 0;
+            
+            Console.WriteLine("The crowd goes wild!");
+            Console.ResetColor();
+            System.Threading.Thread.Sleep(300);
+        }
+        
+        /// <summary>
+        /// Displays a visual representation of the baseball diamond with runners
+        /// </summary>
+        /// <param name="baseState">Array representing runners on bases</param>
+        /// <param name="isAnimation">Whether this is part of an animation sequence (adds delay)</param>
+        private void DisplayBaseDiagram(int[] baseState, bool isAnimation = false)
+        {
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            
+            // Draw the simplified baseball diamond with just the bases
+            Console.WriteLine("       [2B]       ");
+            Console.Write("        ");
+            Console.ForegroundColor = baseState[2] == 1 ? ConsoleColor.Green : ConsoleColor.Gray;
+            Console.Write("○");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("        ");
+            Console.WriteLine("                  ");
+            
+            Console.ForegroundColor = baseState[3] == 1 ? ConsoleColor.Green : ConsoleColor.Gray;
+            Console.Write("  ○");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.Write(" [3B]      ");
+            Console.ForegroundColor = baseState[1] == 1 ? ConsoleColor.Green : ConsoleColor.Gray;
+            Console.Write("○");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("  [1B]");
+            
+            Console.WriteLine("                  ");
+            Console.Write("        ");
+            Console.ForegroundColor = baseState[0] == 1 ? ConsoleColor.Green : ConsoleColor.Gray;
+            Console.Write("○");
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("        ");
+            Console.WriteLine("       [HP]       ");
+            
+            Console.ResetColor();
+            
+            // Only add delay if this is part of an animation
+            if (isAnimation)
+            {
+                System.Threading.Thread.Sleep(200);
+            }
+        }
+
+        /// <summary>
+        /// Displays the current game state (bases, outs, score)
+        /// </summary>
+        private void DisplayGameState()
+        {
+            Console.Clear();
+            
+            // Display game state header
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("\n==== BASEBALL GAME STATE ====");
+            Console.ResetColor();
+            
+            // Display inning and batting team
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine($"Inning: {inning} {(isTeamAOffense ? "Top" : "Bottom")}");
+            Console.WriteLine($"Batting: Team {(isTeamAOffense ? "A" : "B")}");
+            Console.WriteLine("---------------------------");
+            
+            // Display base diagram
+            Console.WriteLine("Baseball Diamond:");
+            DisplayBaseDiagram(bases);
+            
+            // Also display bases in text format for clarity
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write("1st base: ");
+            Console.ForegroundColor = bases[1] == 1 ? ConsoleColor.Green : ConsoleColor.Gray;
+            Console.WriteLine(bases[1] == 1 ? "Runner" : "Empty");
+            
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write("2nd base: ");
+            Console.ForegroundColor = bases[2] == 1 ? ConsoleColor.Green : ConsoleColor.Gray;
+            Console.WriteLine(bases[2] == 1 ? "Runner" : "Empty");
+            
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.Write("3rd base: ");
+            Console.ForegroundColor = bases[3] == 1 ? ConsoleColor.Green : ConsoleColor.Gray;
+            Console.WriteLine(bases[3] == 1 ? "Runner" : "Empty");
+            
+            // Display outs and score
+            Console.ForegroundColor = ConsoleColor.White;
+            Console.WriteLine("---------------------------");
+            Console.WriteLine($"Outs: {outs}");
+            Console.WriteLine("---------------------------");
+            Console.WriteLine($"Score:");
+            Console.WriteLine($"Team A: {teamAScore}");
+            Console.WriteLine($"Team B: {teamBScore}");
+            Console.WriteLine("---------------------------");
+            Console.ResetColor();
+        }
+        
+        /// <summary>
+        /// Add an entry to the game log
+        /// </summary>
+        /// <param name="entry">The entry to add to the log</param>
+        private void LogGameEvent(string entry)
+        {
+            // Add timestamp to the entry
+            string timestamp = $"[Inning {inning} {(isTeamAOffense ? "Top" : "Bottom")}]";
+            string formattedEntry = $"{timestamp} {entry}";
+            
+            // Add the entry to the game log
+            gameLog.Add(formattedEntry);
+            
+            // Also print the log entry to console with distinct color
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.WriteLine($"LOG: {formattedEntry}");
+            Console.ResetColor();
+        }
+        
+        /// <summary>
+        /// Displays the complete game log
+        /// </summary>
+        public void DisplayGameLog()
+        {
+            Console.Clear();
+            Console.ForegroundColor = ConsoleColor.Cyan;
+            Console.WriteLine("========== BASEBALL GAME LOG ==========");
+            Console.ResetColor();
+            
+            if (gameLog.Count == 0)
+            {
+                Console.WriteLine("No game events recorded yet.");
+            }
+            else
+            {
+                foreach (string entry in gameLog)
+                {
+                    Console.WriteLine(entry);
+                }
+            }
+            
+            Console.WriteLine("\nPress Enter to continue...");
+            Console.ReadLine();
+        }
+
+
+    }
+
+    /// <summary>
+    /// Main program class
+    /// </summary>
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            // Set console properties for better display
+            Console.Title = "Baseball Simulation Game";
+            Console.CursorVisible = true;
+            
+            try
+            {
+                // Create and start the baseball game
+                BaseballGame game = new BaseballGame();
+                game.StartGame();
+            }
+            catch (Exception ex)
+            {
+                // Handle any unexpected errors
+                Console.Clear();
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("An error occurred in the game:");
+                Console.WriteLine(ex.Message);
+                Console.WriteLine("\nPress Enter to exit...");
+                Console.ReadLine();
+            }
+        }
+    }
+}
