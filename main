@@ -1,0 +1,335 @@
+#include <iostream>
+#include <vector>
+#include <string>
+#include <algorithm>
+#include <ctime>
+#include <cstdlib>
+#include <thread>
+#include <chrono>
+
+using namespace std;
+
+/// <summary>
+/// Represents a console-based baseball game simulation
+/// </summary>
+class BaseballGame
+{
+private:
+    // Random number generator
+    int Random(int min, int max) {
+        return rand() % (max - min + 1) + min;
+    }
+    
+    // Game state variables
+    int bases[4] = {}; // 0: Home, 1: First, 2: Second, 3: Third (1 means runner present, 0 means no runner)
+    int outs = 0;      // Number of outs in current half-inning
+    int inning = 1;    // Current inning (1-9, or more for extra innings)
+    int teamAScore = 0; // Team A score
+    int teamBScore = 0; // Team B score
+    bool isTeamAOffense = true;  // Current offense (true: Team A, false: Team B)
+    bool isTeamAComputer = false; // Whether Team A is controlled by computer
+    bool isTeamBComputer = false; // Whether Team B is controlled by computer
+    
+    // Game log for recording key events
+    vector<string> gameLog;
+    
+    // Achievement and statistic tracking
+    int perfectGuessCount = 0;
+    int strikeoutCount = 0;
+    int runsScoredThisInning = 0;
+    int largestLead = 0;
+    int biggestComeback = 0;
+    bool wasTrailingByThreeOrMore = false;
+    bool hasAllowedRun = false;
+
+public:
+    /// <summary>
+    /// Initializes and starts the baseball game
+    /// </summary>
+    void StartGame() {
+        cout << "====================================" << endl;
+        cout << "     9-INNING BASEBALL GAME        " << endl;
+        cout << "====================================" << endl;
+        cout << "\nWelcome to the Baseball Simulation!" << endl;
+        cout << "In this game, you'll select pitch/bat zones (1-9)" << endl;
+        cout << "If the batter guesses correctly, they'll hit the ball!" << endl;
+        cout << "Otherwise, after 3 wrong guesses, they're out." << endl;
+        cout << "\nPress Enter to continue..." << endl;
+        cin.ignore();
+
+        SetupTeams();
+
+        // Initialize game state
+        fill(begin(bases), end(bases), 0);
+        outs = 0;
+        inning = 1;
+        teamAScore = 0;
+        teamBScore = 0;
+        isTeamAOffense = true;
+        gameLog.clear();
+
+        // Log game start
+        LogGameEvent("GAME STARTED - Play Ball!");
+
+        system("clear");
+
+        // Main game loop - play until 9 innings (or more if tied)
+        while (inning <= 9 || (inning > 9 && teamAScore == teamBScore)) {
+            PlayInning();
+            inning++;
+        }
+
+        // Game over - display final results
+        DisplayGameState(); // Final state
+
+        cout << "\nGame Over!" << endl;
+
+        cout << "Final Score: Team A: " << teamAScore << ", Team B: " << teamBScore << endl;
+
+        // Log game over
+        LogGameEvent("GAME OVER! Final Score: Team A " + to_string(teamAScore) + " - Team B " + to_string(teamBScore));
+
+        cout << "\nOptions:" << endl;
+        cout << "1. View achievements" << endl;
+        cout << "2. View complete game log" << endl;
+        cout << "3. Exit game" << endl;
+        cout << "Enter your choice (1-3): ";
+
+        bool validChoice = false;
+        while (!validChoice) {
+            string input;
+            getline(cin, input);
+
+            if (input == "1") {
+                // Display final achievements
+                validChoice = true;
+            } else if (input == "2") {
+                // Display complete game log
+                DisplayGameLog();
+                validChoice = true;
+            } else if (input == "3") {
+                // Exit directly
+                validChoice = true;
+            } else {
+                cout << "Invalid choice. Please enter 1, 2, or 3: ";
+            }
+        }
+
+        cout << "\nThank you for playing! Press Enter to exit...";
+        cin.ignore();
+    }
+
+    /// <summary>
+    /// Sets up team control modes (human or computer)
+    /// </summary>
+    void SetupTeams() {
+        cout << "\nWho controls Team A?" << endl;
+        cout << "1. Human" << endl;
+        cout << "2. Computer" << endl;
+        cout << "Enter your choice (1 or 2): ";
+
+        while (true) {
+            string input;
+            getline(cin, input);
+
+            if (input == "1") {
+                isTeamAComputer = false;
+                break;
+            } else if (input == "2") {
+                isTeamAComputer = true;
+                break;
+            }
+            cout << "Invalid input. Please enter 1 or 2: ";
+        }
+
+        cout << "\nWho controls Team B?" << endl;
+        cout << "1. Human" << endl;
+        cout << "2. Computer" << endl;
+        cout << "Enter your choice (1 or 2): ";
+
+        while (true) {
+            string input;
+            getline(cin, input);
+
+            if (input == "1") {
+                isTeamBComputer = false;
+                break;
+            } else if (input == "2") {
+                isTeamBComputer = true;
+                break;
+            }
+            cout << "Invalid input. Please enter 1 or 2: ";
+        }
+    }
+
+    /// <summary>
+    /// Logs a game event
+    /// </summary>
+    /// <param name="entry">The event description</param>
+    void LogGameEvent(const string &entry) {
+        string timestamp = "[Inning " + to_string(inning) + (isTeamAOffense ? " Top" : " Bottom") + "]";
+        string formattedEntry = timestamp + " " + entry;
+        gameLog.push_back(formattedEntry);
+        cout << "LOG: " << formattedEntry << endl;
+    }
+
+    /// <summary>
+    /// Displays the complete game log
+    /// </summary>
+    void DisplayGameLog() {
+        cout << "========== BASEBALL GAME LOG ==========" << endl;
+
+        if (gameLog.empty()) {
+            cout << "No game events recorded yet." << endl;
+        } else {
+            for (const string &entry : gameLog) {
+                cout << entry << endl;
+            }
+        }
+
+        cout << "\nPress Enter to continue...";
+        cin.ignore();
+    }
+
+    /// <summary>
+    /// Displays the current game state
+    /// </summary>
+    void DisplayGameState() {
+        cout << "\n==== BASEBALL GAME STATE ====" << endl;
+
+        cout << "Inning: " << inning << (isTeamAOffense ? " Top" : " Bottom") << endl;
+        cout << "Batting: Team " << (isTeamAOffense ? "A" : "B") << endl;
+        cout << "---------------------------" << endl;
+
+        cout << "Score:" << endl;
+        cout << "Team A: " << teamAScore << endl;
+        cout << "Team B: " << teamBScore << endl;
+        cout << "---------------------------" << endl;
+    }
+
+    /// <summary>
+    /// Plays an inning
+    /// </summary>
+    void PlayInning() {
+        cout << "\nInning " << inning << " Top, Team A at bat" << endl;
+        isTeamAOffense = true;
+        LogGameEvent("START INNING " + to_string(inning));
+        PlayHalfInning();
+
+        if (inning < 9 || teamBScore <= teamAScore) {
+            cout << "\nInning " << inning << " Bottom, Team B at bat" << endl;
+            isTeamAOffense = false;
+            PlayHalfInning();
+        }
+    }
+
+    /// <summary>
+    /// Plays a half-inning
+    /// </summary>
+    void PlayHalfInning() {
+        outs = 0;
+        fill(begin(bases), end(bases), 0);
+        runsScoredThisInning = 0;
+
+        DisplayGameState();
+
+        while (outs < 3) {
+            PlayAtBat();
+            DisplayGameState();
+            this_thread::sleep_for(chrono::milliseconds(300));
+        }
+
+        cout << "Half-inning over. Score: Team A: " << teamAScore << ", Team B: " << teamBScore << endl;
+        string halfInning = isTeamAOffense ? "Top" : "Bottom";
+        LogGameEvent("END " + halfInning + " of Inning " + to_string(inning) + ". Score: Team A " + to_string(teamAScore) + " - Team B " + to_string(teamBScore));
+        this_thread::sleep_for(chrono::milliseconds(150));
+    }
+
+    /// <summary>
+    /// Handles a single at-bat sequence
+    /// </summary>
+    void PlayAtBat() {
+        bool isBatterComputer = isTeamAOffense ? isTeamAComputer : isTeamBComputer;
+        string teamAtBat = isTeamAOffense ? "A" : "B";
+
+        int guessesLeft = 3;
+        bool hit = false;
+
+        cout << "\nTeam " << teamAtBat << " at bat" << endl;
+
+        while (guessesLeft > 0 && !hit) {
+            int pitchZone = Random(1, 9);
+            cout << "Pitcher has selected a pitch location..." << endl;
+
+            if (isBatterComputer) {
+                this_thread::sleep_for(chrono::milliseconds(200));
+            }
+
+            int batterGuess = Random(1, 9);
+            cout << "Batter guesses: " << batterGuess << endl;
+            guessesLeft--;
+
+            if (batterGuess == pitchZone) {
+                cout << ">>> CORRECT GUESS! THE BALL IS HIT! <<<" << endl;
+                this_thread::sleep_for(chrono::milliseconds(1500));
+                hit = true;
+                CalculateHitResult();
+                this_thread::sleep_for(chrono::milliseconds(2000));
+            } else {
+                cout << ">>> WRONG GUESS! STRIKE! " << guessesLeft << " GUESSES REMAINING <<<" << endl;
+                this_thread::sleep_for(chrono::milliseconds(1500));
+                if (guessesLeft == 0) {
+                    cout << "!!! THREE STRIKES, BATTER IS OUT !!!" << endl;
+                    this_thread::sleep_for(chrono::milliseconds(2000));
+                    outs++;
+                    LogGameEvent("Team " + teamAtBat + " batter STRUCK OUT!");
+                }
+            }
+
+            this_thread::sleep_for(chrono::milliseconds(200));
+        }
+    }
+
+    /// <summary>
+    /// Calculates and applies the result of a hit
+    /// </summary>
+    void CalculateHitResult() {
+        int roll = Random(1, 101);
+        string teamName = isTeamAOffense ? "Team A" : "Team B";
+
+        if (roll <= 10) {
+            cout << "HOME RUN! BALL OUT OF PARK!" << endl;
+            LogGameEvent(teamName + " hits a HOME RUN!");
+        } else if (roll <= 42) {
+            cout << ">>> SINGLE! Batter reaches first base! <<<" << endl;
+            LogGameEvent(teamName + " hits a SINGLE.");
+        } else if (roll <= 60) {
+            cout << ">>> DOUBLE! Batter reaches second base! <<<" << endl;
+            LogGameEvent(teamName + " hits a DOUBLE.");
+        } else if (roll <= 65) {
+            cout << ">>> TRIPLE! Batter reaches third base! <<<" << endl;
+            LogGameEvent(teamName + " hits a TRIPLE.");
+        } else {
+            cout << "OUT! Fly out or ground out." << endl;
+            LogGameEvent(teamName + " batter OUT!");
+            outs++;
+        }
+    }
+};
+
+/// Main program
+int main() {
+    // Initialize random seed
+    srand(static_cast<unsigned int>(time(0)));
+
+    try {
+        BaseballGame game;
+        game.StartGame();
+    } catch (const exception &ex) {
+        cout << "An error occurred in the game: " << ex.what() << endl;
+        cout << "\nPress Enter to exit...";
+        cin.ignore();
+    }
+
+    return 0;
+}
